@@ -1,15 +1,24 @@
 #!/usr/bin/env bash
-# Run a Python file of this folder, unchanged, on a Hugging Face GPU.
 #
-#   ./run_on_hf.sh train.py [flavor] [timeout]    # by default a100-large and 2h, for example: l4x1 4h
+#   ./run_on_hf.sh train.py a100-large [timeout]    # timeout: 2h by default, for example 4h or 30m
 #
 # 1. This folder is copied to the bucket <you>/<folder name>, in code/ (without hidden files and out/).
+#
 # 2. On the GPU machine, out/ is a link to out/ in the bucket: what the code writes there is kept on the Hub.
+#
 # 3. The packages of requirements.txt are installed and the file runs, as with `uv run` on your machine.
+#
+
 set -euo pipefail
 
+if [ $# -lt 2 ]; then
+    echo "Usage: ./run_on_hf.sh <python file> <flavor> [timeout], for example: ./run_on_hf.sh train.py a100-large"
+    echo "List the flavors and their prices with: hf jobs hardware"
+    exit 1
+fi
+
 SCRIPT=$1
-FLAVOR=${2:-a100-large}
+FLAVOR=$2
 TIMEOUT=${3:-2h}
 OUT=out                                    # folder where the code saves its results
 PROJECT=$(basename "$PWD")

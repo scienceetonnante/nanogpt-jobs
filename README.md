@@ -26,9 +26,11 @@ uv run --with-requirements requirements.txt train.py
 You need a Hugging Face account with a PRO subscription or credits, and you need to be logged in (`hf auth login`).
 
 ```bash
-./run_on_hf.sh train.py                # on an A100, stopped after 2 hours at most
-./run_on_hf.sh train.py l4x1 4h        # on another GPU, with another time limit
+./run_on_hf.sh train.py a100-large       # on an A100, stopped after 2 hours at most
+./run_on_hf.sh train.py l4x1 4h          # on another GPU, with another time limit
 ```
+
+The GPU type (the "flavor") has no default, so that you never start an expensive machine by mistake. `hf jobs hardware` lists the flavors and their prices.
 
 The script does three things:
 

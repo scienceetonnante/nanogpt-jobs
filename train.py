@@ -2,7 +2,7 @@
 
 The same file runs on a Mac (Apple GPU), on an NVIDIA GPU, or on a CPU:
     uv run --with-requirements requirements.txt train.py     # on your machine
-    ./run_on_hf.sh train.py                                  # on a Hugging Face GPU
+    ./run_on_hf.sh train.py a100-large                       # on a Hugging Face GPU
 """
 
 import datetime
@@ -17,19 +17,23 @@ import torch.nn as nn
 import torch.nn.functional as F
 from datasets import load_dataset
 
-tokenizer = tiktoken.get_encoding("gpt2")
 
-# Model: about 51M parameters, half of them in the token embedding table
-VOCAB_SIZE = tokenizer.n_vocab  # 50,257 tokens
-BLOCK_SIZE = 512                # context length, in tokens
+# --------
+#  MODEL
+# --------
+
+# About 51M parameters (~half in the token embedding table)
+
 N_LAYER = 8
-N_HEAD = 8
 N_EMBD = 512
+BLOCK_SIZE = 512                        # context length, in tokens
+N_HEAD = 8
 
-# Training
-BATCH_SIZE = 16                 # 16 sequences of 512 tokens = 8,192 tokens per step
-LR = 6e-4
-WARMUP_STEPS = 1000
+
+tokenizer = tiktoken.get_encoding("gpt2")
+VOCAB_SIZE = tokenizer.n_vocab          # 50,257 tokens
+
+
 
 
 class Block(nn.Module):
@@ -47,7 +51,7 @@ class Block(nn.Module):
         B, T, C = x.shape
         q, k, v = self.qkv(self.ln1(x)).split(C, dim=2)
         q, k, v = (t.view(B, T, N_HEAD, C // N_HEAD).transpose(1, 2) for t in (q, k, v))
-        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)
+        y = F.scaled_dot_product_attention(q, k, v, is_causal=True)  
         x = x + self.proj(y.transpose(1, 2).reshape(B, T, C))
         return x + self.mlp(self.ln2(x))
 
@@ -81,9 +85,22 @@ class GPT(nn.Module):
         return tokenizer.decode(tokens[0].tolist())
 
 
-# Training. This part runs only when the file is executed, not when sample.py imports the model.
+
+# ----------
+#  Training
+# ----------
+
+
+BATCH_SIZE = 16                         # 16 sequences of 512 tokens = 8,192 tokens per step  
+LR = 6e-4
+WARMUP_STEPS = 1000
+
+
+
 if __name__ == "__main__":
+
     device = "cuda" if torch.cuda.is_available() else "mps" if torch.backends.mps.is_available() else "cpu"
+
 
     # Download TinyStories and turn it into a single long array of tokens
     chunks = []
@@ -93,14 +110,20 @@ if __name__ == "__main__":
     data = np.concatenate(chunks)
     max_steps = len(data) // (BATCH_SIZE * BLOCK_SIZE)  # about one pass over the dataset
 
+
     model = GPT().to(device)
+
+
     optimizer = torch.optim.AdamW(model.parameters(), lr=LR, betas=(0.9, 0.95), weight_decay=0.1)
     print(f"Device: {device} | {sum(p.numel() for p in model.parameters()) / 1e6:.0f}M parameters | "
           f"{len(data) / 1e6:.0f}M training tokens | {max_steps:,} steps")
 
-    # On NVIDIA GPUs, compiling the model and computing in bfloat16 make training much faster.
-    # Neither helps on a Mac. The compiled copy is used for training steps only.
+
+    # On NVIDIA GPUs, compiling the model and computing in bf16 make training much faster.
     fast_model = torch.compile(model) if device == "cuda" else model
+
+
+    os.makedirs("out", exist_ok=True)
     start = time.time()
 
     for step in range(1, max_steps + 1):
@@ -134,9 +157,9 @@ if __name__ == "__main__":
             print(f"step {step:6d}/{max_steps} | loss {loss.item():.3f} | "
                   f"{tokens_per_sec:,.0f} tokens/s | time left {time_left}")
 
-        if step % 2000 == 0:  # show what the model writes at this point
+        if step % 2000 == 0:  # show what the model writes at this point, and save it
             print(f"\n{model.generate('Once upon a time')}\n")
+            torch.save(model.state_dict(), "out/model.pt")
 
-    os.makedirs("out", exist_ok=True)
     torch.save(model.state_dict(), "out/model.pt")
     print(f"Model saved to out/model.pt after {datetime.timedelta(seconds=round(time.time() - start))}")
